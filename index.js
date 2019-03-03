@@ -7,6 +7,7 @@ import {
   Dimensions,
   Animated,
   TouchableWithoutFeedback,
+  I18nManager,
 } from 'react-native';
 import PropTypes from 'prop-types';
 import styles from './styles';
@@ -29,7 +30,10 @@ type Props = {
   onStartShouldSetResponderCapture: Function,
   isOpen: bool,
   bounceBackOnOverdraw: bool,
-  autoClosing: bool
+  autoClosing: bool,
+  closeByClickingOnContent: bool,
+  fixedMenuOffset: bool,
+  externalToggle: Function
 };
 
 type Event = {
@@ -101,7 +105,7 @@ export default class SideMenu extends React.Component {
       left,
     };
 
-    this.state.left.addListener(({value}) => this.props.onSliding(Math.abs((value - this.state.hiddenMenuOffset) / (this.state.openMenuOffset - this.state.hiddenMenuOffset))));
+    this.state.left.addListener(({ value }) => props.onSliding(Math.abs((value - this.state.hiddenMenuOffset) / (this.state.openMenuOffset - this.state.hiddenMenuOffset))));
   }
 
   componentWillMount(): void {
@@ -117,6 +121,16 @@ export default class SideMenu extends React.Component {
   componentWillReceiveProps(props: Props): void {
     if (typeof props.isOpen !== 'undefined' && this.isOpen !== props.isOpen && (props.autoClosing || this.isOpen === false)) {
       this.openMenu(props.isOpen);
+    } else {
+      const { openMenuOffset, hiddenMenuOffset } = props
+      // if openMenuOffset or hiddenMenuOffset has changed
+      if ((this.state.openMenuOffset != openMenuOffset) || (this.state.hiddenMenuOffset != hiddenMenuOffset)) {
+        this.setState({
+          ...this.state,
+          openMenuOffset, hiddenMenuOffset
+        })
+        this.moveLeft(this.isOpen ? openMenuOffset : hiddenMenuOffset)
+      }
     }
   }
 
@@ -124,7 +138,11 @@ export default class SideMenu extends React.Component {
     const { width, height } = e.nativeEvent.layout;
     const openMenuOffset = width * this.state.openOffsetMenuPercentage;
     const hiddenMenuOffset = width * this.state.hiddenMenuOffsetPercentage;
-    this.setState({ width, height, openMenuOffset, hiddenMenuOffset });
+    if (this.props.fixedMenuOffset === true) {
+      this.setState({ width, height, hiddenMenuOffset });
+    } else {
+      this.setState({ width, height, openMenuOffset, hiddenMenuOffset });
+    }
   }
 
   /**
@@ -134,9 +152,15 @@ export default class SideMenu extends React.Component {
   getContentView() {
     let overlay: React.Element<void, void> = null;
 
-    if (this.isOpen) {
-      overlay = (
-        <TouchableWithoutFeedback onPress={() => this.openMenu(false)}>
+    if (this.props.closeByClickingOnContent && this.isOpen) {
+	    overlay = (
+        <TouchableWithoutFeedback onPress={() => {
+	          if (this.props.externalToggle) {
+	            this.props.externalToggle();
+	          }
+	          this.openMenu(false);
+	        }}
+	      >
           <View style={styles.overlay} />
         </TouchableWithoutFeedback>
       );
@@ -234,7 +258,7 @@ export default class SideMenu extends React.Component {
   }
 
   render(): React.Element<void, void> {
-    const boundryStyle = this.props.menuPosition === 'right' ?
+    const boundryStyle = ((this.props.menuPosition === 'left' && I18nManager.isRTL) || (this.props.menuPosition === 'right' && !I18nManager.isRTL)) ?
       { left: this.state.width - this.state.openMenuOffset } :
       { right: this.state.width - this.state.openMenuOffset };
 
@@ -275,6 +299,10 @@ SideMenu.propTypes = {
   isOpen: PropTypes.bool,
   bounceBackOnOverdraw: PropTypes.bool,
   autoClosing: PropTypes.bool,
+  closeByClickingOnContent: PropTypes.bool,
+  onSliding: PropTypes.func,
+  fixedMenuOffset: PropTypes.bool,
+  externalToggle: PropTypes.func,
 };
 
 SideMenu.defaultProps = {
@@ -299,9 +327,13 @@ SideMenu.defaultProps = {
   animationFunction: (prop, value) => Animated.spring(prop, {
     toValue: value,
     friction: 8,
+    useNativeDriver: true,
   }),
   onAnimationComplete: () => {},
   isOpen: false,
   bounceBackOnOverdraw: true,
   autoClosing: true,
+  closeByClickingOnContent: true,
+  fixedMenuOffset: false,
+  externalToggle: () => {},
 };
